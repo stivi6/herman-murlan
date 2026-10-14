@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+:root {
+  --background: #09090b;
+  --foreground: #f4f4f5;
+
+  /* Herman Murlan card-club tokens */
+  --room-outer: #260607;
+  --room-shadow: #120203;
+  --felt-base: #701114;
+  --felt-highlight: #941c20;
+  --felt-shadow: #4b090d;
+  --gold: #eab83f;
+  --gold-highlight: #ffe08a;
+  --gold-shadow: #815018;
+  --cream: #fff1cd;
+  --text-muted: #d1aaa0;
+  --danger: #a92327;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Respect reduced motion globally; the app also has an animation toggle. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* User animation toggle (Settings → Animations off). */
+.motion-off *,
+.motion-off *::before,
+.motion-off *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Slim scrollbars for the hand fan on small screens. */
+*::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Murlan card sizing: every card width derives from --cw so the table  */
+/* fills phones and 25" monitors alike. Overlaps are proportional, so  */
+/* fans keep the same look at every size.                              */
+/* ------------------------------------------------------------------ */
+.mcard {
+  width: var(--cw, 3.5rem);
+  aspect-ratio: 5 / 7;
+}
+
+/* Width variants (vmin-clamped: grow with the screen, within limits). */
+.cw-xs { --cw: clamp(1.5rem, 4.5vmin, 2.5rem); }    /* opponent backs, exchange */
+.cw-sm { --cw: clamp(2rem, 6vmin, 3.5rem); }        /* compact faces */
+.cw-hand { --cw: clamp(3rem, 9vmin, 6.5rem); }      /* player's hand */
+.cw-trick { --cw: clamp(3.25rem, 10.5vmin, 7.5rem); } /* center pile */
+
+/* Overlapped fans: each card after the first slides left by a fixed share. */
+.fan-hand > * + * { margin-left: calc(var(--cw) * -0.6); }
+.fan-trick > * + * { margin-left: calc(var(--cw) * -0.45); }
+.fan-backs-row > * + * { margin-left: calc(var(--cw) * -0.55); }
+.fan-backs-col > * + * { margin-top: calc(var(--cw) * -0.55 * 1.4); }
+
+/* Turn zoom: the whole hand grows when it's your turn (unmissable). */
+.hand-turn {
+  transform: scale(1.12) translateY(-6px);
+  filter: drop-shadow(0 0 18px rgba(252, 211, 77, 0.55));
+}
+.hand-idle {
+  transform: scale(1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Card-club room: layered burgundy vignette + faint damask texture.    */
+/* Decorative layers are pointer-events:none and sit behind content.   */
+/* ------------------------------------------------------------------ */
+.murlan-room {
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 30%, rgba(234, 184, 63, 0.07), transparent 55%),
+    radial-gradient(ellipse at center, #3a0a0c 0%, var(--room-outer) 55%, var(--room-shadow) 100%);
+}
+.murlan-room::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23eab83f' stroke-opacity='0.10'%3E%3Cpath d='M36 6 66 36 36 66 6 36Z'/%3E%3Ccircle cx='36' cy='36' r='2.5' fill='%23eab83f' fill-opacity='0.10' stroke='none'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 72px 72px;
+}
+
+/* Inset tabletop: rounded felt with double gold edge, bevel + pattern. */
+.murlan-felt {
+  background:
+    radial-gradient(ellipse 90% 75% at 50% 40%, var(--felt-highlight) 0%, var(--felt-base) 55%, var(--felt-shadow) 100%);
+  border: 2px solid var(--gold-shadow);
+  outline: 1px solid rgba(234, 184, 63, 0.55);
+  outline-offset: 5px;
+  box-shadow:
+    inset 0 2px 18px rgba(0, 0, 0, 0.55),
+    inset 0 -2px 10px rgba(0, 0, 0, 0.4),
+    0 0 42px rgba(234, 184, 63, 0.12);
+}
+.murlan-felt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23ffe08a' stroke-opacity='0.07'%3E%3Cpath d='M28 4 52 28 28 52 4 28Z'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 56px 56px;
+}
+
+/* Corner glints on the frame. */
+.murlan-glint {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--gold-highlight) 0%, rgba(234, 184, 63, 0.5) 45%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Visible keyboard focus everywhere on the table. */
+.murlan-room :focus-visible {
+  outline: 3px solid var(--gold-highlight);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
