@@ -69,7 +69,7 @@ export function CardView({ id, selected, selectable, size = "hand", dimmed, fill
         "mcard relative shrink-0 overflow-hidden rounded-[8%] bg-white shadow-md transition-all duration-150",
         SIZE_CLASS[size],
         selected
-          ? "-translate-y-4 scale-110 shadow-[0_10px_24px_rgba(0,0,0,0.5)] ring-[3px] ring-amber-300"
+          ? "-translate-y-4 scale-[1.06] shadow-[0_10px_24px_rgba(0,0,0,0.5)] ring-[3px] ring-amber-300"
           : "ring-1 ring-black/40",
         dimmed && "opacity-60",
         selectable ? "cursor-pointer hover:-translate-y-2 hover:scale-105" : "cursor-default",

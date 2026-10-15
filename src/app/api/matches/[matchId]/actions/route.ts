@@ -42,15 +42,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ matchId: strin
   const admin = adminClient();
 
   // Idempotency first: return the original receipt without re-applying.
-  const { data: existing } = await admin
-    .from("game_action_receipts")
-    .select("*")
-    .eq("match_id", matchId)
-    .eq("actor_user_id", user.id)
-    .eq("action_id", actionId)
-    .maybeSingle();
+  // Runs in parallel with the session load (independent reads).
+  const [existingRes, loaded] = await Promise.all([
+    admin
+      .from("game_action_receipts")
+      .select("*")
+      .eq("match_id", matchId)
+      .eq("actor_user_id", user.id)
+      .eq("action_id", actionId)
+      .maybeSingle(),
+    loadSession(matchId),
+  ]);
+  const existing = existingRes.data;
   if (existing) {
-    const loaded = await loadSession(matchId);
     return jsonOk({
       duplicate: true,
       version: (existing as { resulting_version: number }).resulting_version,
@@ -58,14 +62,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ matchId: strin
     });
   }
 
-  const loaded = await loadSession(matchId);
   if (!loaded) return jsonError("MATCH_NOT_FOUND", "Match not found.", 404);
-  const room = await getRoom(loaded.state.roomId);
+  // Room, membership and member list are independent reads: one round trip.
+  const [room, me, members] = await Promise.all([
+    getRoom(loaded.state.roomId),
+    getMembership(loaded.state.roomId, user.id),
+    listMembers(loaded.state.roomId),
+  ]);
   if (!room) return jsonError("ROOM_NOT_FOUND", "Room not found.", 404);
-  const me = await getMembership(room.id, user.id);
   if (!me || me.is_bot) return jsonError("FORBIDDEN", "You are not a player in this room.", 403);
 
-  const members = await listMembers(room.id);
   const mySeat = me.seat_index as Seat;
 
   // Translate the intent into an engine action bound to the caller's OWN seat.

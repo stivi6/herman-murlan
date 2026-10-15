@@ -21,13 +21,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ matchId: strin
 
   const loaded = await loadSession(matchId);
   if (!loaded) return jsonError("MATCH_NOT_FOUND", "Match not found.", 404);
-  const room = await getRoom(loaded.state.roomId);
+  // Independent reads share one round trip.
+  const [room, me, members] = await Promise.all([
+    getRoom(loaded.state.roomId),
+    getMembership(loaded.state.roomId, user.id),
+    listMembers(loaded.state.roomId),
+  ]);
   if (!room) return jsonError("ROOM_NOT_FOUND", "Room not found.", 404);
-
-  const me = await getMembership(room.id, user.id);
   if (!me) return jsonError("FORBIDDEN", "You are not a member of this room.", 403);
-
-  const members = await listMembers(room.id);
   const ordered = [...members].sort((a, b) => a.seat_index - b.seat_index);
   const seatMeta = ordered.map((m) => ({
     displayName: m.display_name,
@@ -39,13 +40,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ matchId: strin
   const mySeat = me.is_bot ? null : (me.seat_index as Seat);
   const snapshot = toPrivateSnapshot(loaded.state, seatMeta, mySeat, me.is_host);
 
-  // Touch presence on snapshot reads (cheap reconnect recovery signal).
+  // Touch presence without blocking the response (best-effort signal).
   const admin = adminClient();
-  await admin
+  void admin
     .from("room_members")
     .update({ last_seen_at: new Date().toISOString(), presence_status: "online" })
     .eq("room_id", room.id)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .then((r) => {
+      if (r.error) console.error("heartbeat failed", r.error.message);
+    });
 
   // Safety net: if a bot must act, advance it without blocking this response.
   // (The actions route schedules the same work via after(); this covers the

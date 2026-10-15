@@ -43,7 +43,12 @@ APIs return a clear `NOT_CONFIGURED` error instead of a fake game.
 
 1. Push this repo to GitHub and import it in Vercel.
 2. Add the three environment variables above (Production + Preview).
-3. Deploy. Game routes run on the Node.js runtime.
+3. **Match regions for speed:** Supabase Dashboard → Project Settings → General
+   shows your database region (e.g. West EU). Then Vercel → your project →
+   Settings → Functions → Function Region → pick the closest one. Every tap
+   costs a few database round trips, so same-continent placement is the single
+   biggest latency win.
+4. Deploy. Game routes run on the Node.js runtime.
 4. Confirm the production site only exposes public snapshots: the browser
    network tab should never show other players' hands, the deck order, or the
    service-role key.

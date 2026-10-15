@@ -10,20 +10,25 @@ export async function GET(_req: Request, ctx: { params: Promise<{ roomId: string
   const user = await requireUser();
   if (!user) return jsonError("UNAUTHENTICATED", "Sign in first.", 401);
 
-  const room = await getRoom(roomId);
+  const [room, me, members] = await Promise.all([
+    getRoom(roomId),
+    getMembership(roomId, user.id),
+    listMembers(roomId),
+  ]);
   if (!room) return jsonError("ROOM_NOT_FOUND", "Room not found.", 404);
-  const me = await getMembership(roomId, user.id);
   if (!me) return jsonError("FORBIDDEN", "You are not a member of this room.", 403);
 
-  // Touch presence.
+  // Touch presence without blocking the response (best-effort signal).
   const admin = adminClient();
-  await admin
+  void admin
     .from("room_members")
     .update({ last_seen_at: new Date().toISOString(), presence_status: "online" })
     .eq("room_id", roomId)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .then((r) => {
+      if (r.error) console.error("heartbeat failed", r.error.message);
+    });
 
-  const members = await listMembers(roomId);
   return jsonOk({
     room: {
       id: room.id,

@@ -51,6 +51,10 @@ export function useMatch(matchId: string | null) {
     try {
       const { snapshot: snap } = await getSnapshot(matchId);
       if (!mountedRef.current) return;
+      // Out-of-order guard: overlapping polls/refetches on slow networks can
+      // resolve stale-first. Never let an older version overwrite a newer one
+      // (versions grow monotonically via server compare-and-swap).
+      if (snap.version < versionRef.current) return;
       versionRef.current = snap.version;
       setSnapshot(snap);
       setError(null);
@@ -125,10 +129,10 @@ export function useMatch(matchId: string | null) {
         return;
       }
       await fetchSnapshot();
-      backoffRef.current = Math.min(backoffRef.current * 1.5, 15000);
-      timer = setTimeout(tick, connected === "live" ? 12000 : backoffRef.current);
+      backoffRef.current = Math.min(backoffRef.current * 1.5, 8000);
+      timer = setTimeout(tick, connected === "live" ? 6000 : backoffRef.current);
     };
-    timer = setTimeout(tick, 4000);
+    timer = setTimeout(tick, 2500);
     const onVisible = () => {
       if (!document.hidden) void fetchSnapshot();
     };

@@ -15,15 +15,23 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, timeoutMs = 20_000): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(path, {
       ...init,
+      signal: ctrl.signal,
       headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
     });
-  } catch {
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new ApiError("NETWORK", "Request timed out. Check your connection.", 0);
+    }
     throw new ApiError("NETWORK", "Network error. Check your connection.", 0);
+  } finally {
+    clearTimeout(timer);
   }
   let body: Record<string, unknown> = {};
   try {

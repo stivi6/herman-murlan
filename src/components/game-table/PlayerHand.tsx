@@ -53,9 +53,19 @@ export function PlayerHand({
   const sel = new Set(selected);
   const toggleAndFocus = (id: string, el?: HTMLElement) => {
     onToggle(id);
-    // Tap-to-focus: buried cards scroll into view so the pick is visible.
+    // Keep the tapped card in view so the pick is visible. Instant and
+    // conditional: never fight the user's own scrolling with smooth glides.
     requestAnimationFrame(() => {
-      el?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      const sc = scroller.current;
+      if (!sc || !el) return;
+      const sb = sc.getBoundingClientRect();
+      const eb = el.getBoundingClientRect();
+      const visible =
+        eb.left >= sb.left - 4 &&
+        eb.right <= sb.right + 4;
+      if (!visible) {
+        el.scrollIntoView({ behavior: "auto", inline: "center", block: "nearest" });
+      }
     });
   };
 
@@ -68,7 +78,7 @@ export function PlayerHand({
       style={
         zoomed
           ? {
-              transform: "scale(1.1) translateY(-5px)",
+              transform: "scale(1.07) translateY(-5px)",
               filter: "drop-shadow(0 0 18px rgba(234, 184, 63, 0.55))",
               transition: "transform 220ms ease-out, filter 220ms",
             }

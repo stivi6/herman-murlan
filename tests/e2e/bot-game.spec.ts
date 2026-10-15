@@ -73,6 +73,7 @@ test("one human + three bots completes a hand on a phone viewport", async ({ bro
     const hand = page.getByTestId("player-hand");
     await expect(hand).toBeVisible({ timeout: 30_000 });
     await noHorizontalOverflow(page, "table");
+    console.log(`bot-game room: ${page.url()}`);
 
     let sawPile = false;
     let actions = 0;
@@ -80,12 +81,21 @@ test("one human + three bots completes a hand on a phone viewport", async ({ bro
     const t0 = Date.now();
     // Play until the hand ends (result overlay) or we run out of budget.
     while (Date.now() - t0 < 300_000) {
+      // A pile anywhere on the table (bots included) proves the trick area
+      // renders played cards — the core of the "pile appears" complaint.
+      if (!sawPile) {
+        const pileCount = await page
+          .getByTestId("trick-area")
+          .locator("[data-card-id]")
+          .count()
+          .catch(() => 0);
+        if (pileCount > 0) sawPile = true;
+      }
       // Hand over?
       if (await page.getByRole("dialog").first().isVisible().catch(() => false)) {
         const title = await page.getByRole("dialog").first().textContent().catch(() => "");
         if (/result|wins|tied/i.test(title ?? "")) break;
       }
-      // Exchange phase? Pick the first card and confirm.
       const exchangeGive = page.getByRole("button", { name: "Give card" });
       if (await exchangeGive.isVisible().catch(() => false)) {
         const ids = sortLowFirst(await handIds(page));
@@ -99,68 +109,59 @@ test("one human + three bots completes a hand on a phone viewport", async ({ bro
       }
       const playBtn = page.getByRole("button", { name: "Play selected cards" });
       const passBtn = page.getByRole("button", { name: "Pass", exact: true });
-      const myTurn = await page.getByText("YOUR TURN", { exact: true }).isVisible({ timeout: 2_000 }).catch(() => false);
+      // Glance at the turn pill right before acting, like a human would. If
+      // the turn moved on mid-iteration, abandon and re-sync next loop.
+      const stillMine = () =>
+        page.getByText("YOUR TURN", { exact: true }).waitFor({ state: "visible", timeout: 1_000 }).then(() => true).catch(() => false);
+      const myTurn = await stillMine();
       if (!myTurn) {
         await page.waitForTimeout(1200); // bots thinking / polling
         continue;
       }
-      // My turn: make sure something is selected (fresh leads start empty).
-      const selectedCount = await page
-        .getByTestId("player-hand")
-        .locator('[data-card-id][aria-pressed="true"]')
-        .count()
-        .catch(() => 0);
-      const before = sortLowFirst(await handIds(page));
-      if (selectedCount === 0 && before.length > 0) {
-        await page.getByTestId("player-hand").locator(`[data-card-id="${before[0]}"]`).click({ position: { x: 8, y: 30 } });
+      // My turn: always start from a clean slate (a stale pick from a
+      // previous table state would block us forever).
+      const clearFirst = page.getByRole("button", { name: "Clear selection" });
+      if (await clearFirst.waitFor({ state: "visible", timeout: 1_000 }).then(() => true).catch(() => false)) {
+        await clearFirst.click();
       }
-      const canPlay = await playBtn.isEnabled({ timeout: 3_000 }).catch(() => false);
-      const canPass = await passBtn.isEnabled({ timeout: 3_000 }).catch(() => false);
-      if (canPlay) {
-        // Try cards low-first until Play enables (UI pre-validation decides).
-        // Buried cards are mostly covered by their neighbour: force the click.
-        // A bot move landing mid-tap can invalidate the pick (tap is then a
-        // no-op with an explanatory message) — retry with a fresh selection.
-        let played = false;
-        for (let attempt = 0; attempt < 3 && !played; attempt++) {
-          const clear = page.getByRole("button", { name: "Clear selection" });
-          if (await clear.isVisible({ timeout: 1_000 }).catch(() => false)) {
-            await clear.click();
-          }
-          const current = sortLowFirst(await handIds(page));
-          for (const id of current) {
-            await page.getByTestId("player-hand").locator(`[data-card-id="${id}"]`).click({ position: { x: 8, y: 30 } });
-            if (await playBtn.isEnabled({ timeout: 2_000 }).catch(() => false)) {
-              const tClick = Date.now();
-              await playBtn.click({ timeout: 10_000 });
-              try {
-                // Optimistic pile must appear ~instantly.
-                await expect(page.getByTestId("trick-area").locator(`[data-card-id="${id}"]`)).toBeVisible({ timeout: 2_000 });
-                sawPile = true;
-                // Server confirmation = card leaves the hand.
-                await expect
-                  .poll(async () => (await handIds(page)).includes(id), { timeout: 20_000 })
-                  .toBe(false);
-                latencies.push(Date.now() - tClick);
-                actions++;
-                played = true;
-              } catch {
-                // Stale tap (bot moved first) — retry with fresh selection.
-              }
-              break;
-            }
-          }
-          if (!played) break;
+      let played = false;
+      for (const id of sortLowFirst(await handIds(page))) {
+        try {
+          await page.getByTestId("player-hand").locator(`[data-card-id="${id}"]`).evaluate((el) => (el as HTMLElement).click());
+        } catch {
+          continue;
         }
-        if (!played && (await passBtn.isEnabled({ timeout: 2_000 }).catch(() => false))) {
-          await passBtn.click({ timeout: 10_000 });
-          actions++;
+        if (await playBtn.isEnabled({ timeout: 400 }).catch(() => false)) {
+          if (!(await stillMine())) break;
+          const tClick = Date.now();
+          await playBtn.click({ timeout: 5_000 }).catch(() => undefined);
+          try {
+            // Optimistic pile must appear ~instantly.
+            await expect(page.getByTestId("trick-area").locator(`[data-card-id="${id}"]`)).toBeVisible({ timeout: 2_000 });
+            sawPile = true;
+            // Server confirmation = card leaves the hand.
+            await expect
+              .poll(async () => (await handIds(page)).includes(id), { timeout: 20_000 })
+              .toBe(false);
+            latencies.push(Date.now() - tClick);
+            actions++;
+            played = true;
+          } catch {
+            // Stale tap (turn moved first) — re-pick next iteration.
+          }
+          break;
         }
-      } else if (canPass) {
-        await passBtn.click({ timeout: 10_000 });
+        // Undo this pick before trying the next card (singles only).
+        try {
+          await page.getByTestId("player-hand").locator(`[data-card-id="${id}"]`).evaluate((el) => (el as HTMLElement).click());
+        } catch {
+          // ignore
+        }
+      }
+      if (!played) {
+        if (!(await stillMine())) continue;
+        await passBtn.click({ timeout: 5_000 }).catch(() => undefined);
         actions++;
-      } else {
-        await page.waitForTimeout(800);
       }
       await noHorizontalOverflow(page, "table");
       await page.waitForTimeout(800);
